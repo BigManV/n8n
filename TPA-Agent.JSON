@@ -1,0 +1,727 @@
+﻿{
+  "name": "TPA Portal Query Defender - Production Ready",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "b5c7bba0-7e98-4c41-9f10-3a2c3a3c8c01",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "content": "## TPA Portal Query Defender - Production Ready\n\n**Happy Path (Every 15 Minutes):**\n1. Puppeteer logs in and checks pending claims\n2. If status=QUERY_FOUND, AI drafts reply\n3. WhatsApp sends interactive buttons to Doctor\n4. Workflow waits (webhook) for button click\n5. On Approve, Puppeteer re-logs in and uploads reply\n\n**Error Handling:**\n- Scrape failures -> Slack alert\n- Upload failures -> Slack alert + WhatsApp notification",
+        "height": 280,
+        "width": 580
+      },
+      "id": "f3b71b62-4a44-4121-9c40-22d3ef9f6e01",
+      "name": "Sticky Note - Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "url": "https://dummy-portal.mediassist.in/login",
+        "sendQuery": false,
+        "sendHeaders": false,
+        "options": {}
+      },
+      "id": "b23e6b2a-6a21-4c35-8fef-3e2e2d9f3d01",
+      "name": "Puppeteer - Watchdog (Scrape)",
+      "type": "n8n-nodes-puppeteer.puppeteer",
+      "typeVersion": 1,
+      "position": [540, 300],
+      "executeOnce": true,
+      "continueOnFail": true,
+      "parameters": {
+        "launchOptions": {
+          "headless": true,
+          "args": ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        },
+        "steps": [
+          {
+            "action": "goto",
+            "url": "https://dummy-portal.mediassist.in/login",
+            "waitUntil": "networkidle2"
+          },
+          {
+            "action": "type",
+            "selector": "#username",
+            "value": "admin"
+          },
+          {
+            "action": "type",
+            "selector": "#password",
+            "value": "pass123"
+          },
+          {
+            "action": "clickAndWait",
+            "selector": "#login_btn",
+            "waitUntil": "networkidle2"
+          },
+          {
+            "action": "goto",
+            "url": "https://dummy-portal.mediassist.in/claims/pending",
+            "waitUntil": "networkidle2"
+          },
+          {
+            "action": "evaluate",
+            "function": "() => {\n  const rows = Array.from(document.querySelectorAll('table tbody tr'));\n  for (const row of rows) {\n    const statusCell = row.querySelector('.status, td:nth-child(4)');\n    const statusText = (statusCell?.textContent || '').trim().toUpperCase();\n    if (statusText === 'QUERY RAISED') {\n      const patientCell = row.querySelector('.patient, td:nth-child(1)');\n      const claimIdCell = row.querySelector('.claimId, td:nth-child(2)');\n      const queryCell = row.querySelector('.queryText, td:nth-child(5)');\n      return {\n        status: 'QUERY_FOUND',\n        claim_id: (claimIdCell?.textContent || '').trim(),\n        patient: (patientCell?.textContent || '').trim(),\n        query_text: (queryCell?.textContent || '').trim()\n      };\n    }\n  }\n  return { status: 'NO_QUERY' };\n}"
+          }
+        ],
+        "output": "lastResult"
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "QUERY_FOUND",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a64d5db5-e7b0-4e18-a5b9-1a9a7a1c2a01",
+      "name": "IF - Query Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [780, 300]
+    },
+    {
+      "parameters": {},
+      "id": "d0b08a8a-7a37-4c78-8db1-4b1b4c1f5a01",
+      "name": "End - No Query",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1020, 440]
+    },
+    {
+      "parameters": {
+        "content": "**Step 1: Watchdog (Puppeteer)**\n- Login with credentials\n- Navigate to pending claims\n- Scrape first row with status = QUERY RAISED\n- Return claim_id, patient, query_text\n- On error: sends Slack alert",
+        "height": 180,
+        "width": 400
+      },
+      "id": "f8bfe3df-6e1b-4dba-9d98-0a2a1a3c4a01",
+      "name": "Sticky Note - Watchdog",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [520, 80]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-1.5-flash",
+          "mode": "list",
+          "cachedResultName": "gemini-1.5-flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a Senior Medical Officer at a hospital. Respond ONLY with the clinical justification text, no preamble or explanation."
+            },
+            {
+              "content": "={{ 'The Insurance TPA has raised this query for Patient ' + $json.patient + ': \"' + $json.query_text + '\". Draft a strictly medical, 2-sentence clinical justification reply using formal clinical language. Be concise and factual.' }}",
+              "role": "user"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.2,
+          "maxOutputTokens": 256
+        }
+      },
+      "id": "c1a0c5a4-5c1b-4c9b-9f1a-1a1b1c1d1e01",
+      "name": "Google Gemini - Draft Reply",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [1020, 300],
+      "credentials": {
+        "googleGeminiApi": {
+          "id": "REPLACE_WITH_YOUR_GEMINI_CRED_ID",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ai_draft",
+              "name": "ai_draft",
+              "value": "={{ $json.text || $json.output || $json.response?.text || $json.content || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "claim_id",
+              "name": "claim_id",
+              "value": "={{ $('IF - Query Found?').item.json.claim_id }}",
+              "type": "string"
+            },
+            {
+              "id": "patient",
+              "name": "patient",
+              "value": "={{ $('IF - Query Found?').item.json.patient }}",
+              "type": "string"
+            },
+            {
+              "id": "query_text",
+              "name": "query_text",
+              "value": "={{ $('IF - Query Found?').item.json.query_text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b7d2fd8a-9f2b-4e9a-9c2a-0d1e2f3a4b01",
+      "name": "Set - Consolidate Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1260, 300]
+    },
+    {
+      "parameters": {
+        "content": "**Step 2: AI Draft (Gemini)**\n- System: Senior Medical Officer\n- Generates 2-sentence clinical justification\n- Output stored into ai_draft\n- Original claim data is preserved",
+        "height": 160,
+        "width": 400
+      },
+      "id": "ab3e0b3c-2c2e-4a15-9b8f-7f1c2d3e4a01",
+      "name": "Sticky Note - AI",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1000, 80]
+    },
+    {
+      "parameters": {
+        "phoneNumberId": "={{ $env.WHATSAPP_PHONE_NUMBER_ID || 'REPLACE_WITH_SENDER_PHONE_NUMBER_ID' }}",
+        "recipientPhoneNumber": "={{ $env.DOCTOR_WHATSAPP_NUMBER || 'REPLACE_WITH_DOCTOR_WHATSAPP_NUMBER' }}",
+        "resource": "message",
+        "operation": "send",
+        "messageType": "interactive",
+        "interactive": {
+          "interactiveType": "button",
+          "bodyText": "={{ ' *TPA QUERY ALERT*\\n\\n*Patient:* ' + $json.patient + '\\n*Claim ID:* ' + $json.claim_id + '\\n*Query:* ' + $json.query_text + '\\n\\n *AI Draft Reply:*\\n' + $json.ai_draft }}",
+          "buttons": {
+            "buttonValues": [
+              {
+                "buttonId": "btn_approve",
+                "buttonText": " Approve & Upload"
+              },
+              {
+                "buttonId": "btn_reject",
+                "buttonText": " Reject"
+              }
+            ]
+          }
+        },
+        "options": {}
+      },
+      "id": "f2c3a4b5-6d7e-4f80-9a01-2b3c4d5e6f01",
+      "name": "WhatsApp - Send Buttons to Doctor",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 2,
+      "position": [1500, 300],
+      "credentials": {
+        "whatsAppBusinessCloudApi": {
+          "id": "REPLACE_WITH_YOUR_WHATSAPP_CRED_ID",
+          "name": "WhatsApp Business Cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "**Step 3: WhatsApp Notification**\n- Sends interactive message with buttons\n- Doctor sees: Patient, Claim ID, Query, AI Draft\n- Buttons: Approve & Upload | Reject\n\n**Step 4: Wait for Response**\n- Pauses until webhook callback\n- Your WhatsApp webhook must POST button_id to resume URL",
+        "height": 220,
+        "width": 500
+      },
+      "id": "caa3f5d6-1c2b-4b7e-9d01-3a4b5c6d7e01",
+      "name": "Sticky Note - Approval",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1480, 40]
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "options": {
+          "webhookSuffix": "/doctor-response"
+        }
+      },
+      "id": "d8e9f001-2a3b-4c5d-8e9f-001122334455",
+      "name": "Wait - Doctor Response",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1740, 300],
+      "webhookId": "doctor-approval-webhook"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {},
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "id": "merge-data-after-wait",
+      "name": "Merge - Restore Context",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1980, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "approval-check",
+              "leftValue": "={{ $json.body?.interactive?.button_reply?.id || $json.body?.button_id || $json.button_id || '' }}",
+              "rightValue": "btn_approve",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e1f2a3b4-c5d6-4e7f-8a90-1b2c3d4e5f01",
+      "name": "IF - Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [2220, 300]
+    },
+    {
+      "parameters": {},
+      "id": "aa11bb22-cc33-4d44-8e55-66778899a001",
+      "name": "End - Rejected",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [2460, 440]
+    },
+    {
+      "parameters": {
+        "url": "https://dummy-portal.mediassist.in/login",
+        "sendQuery": false,
+        "sendHeaders": false,
+        "options": {}
+      },
+      "id": "bb22cc33-dd44-4e55-9f66-77889900aa01",
+      "name": "Puppeteer - Auto Upload",
+      "type": "n8n-nodes-puppeteer.puppeteer",
+      "typeVersion": 1,
+      "position": [2460, 300],
+      "continueOnFail": true,
+      "parameters": {
+        "launchOptions": {
+          "headless": true,
+          "args": ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        },
+        "steps": [
+          {
+            "action": "goto",
+            "url": "https://dummy-portal.mediassist.in/login",
+            "waitUntil": "networkidle2"
+          },
+          {
+            "action": "type",
+            "selector": "#username",
+            "value": "admin"
+          },
+          {
+            "action": "type",
+            "selector": "#password",
+            "value": "pass123"
+          },
+          {
+            "action": "clickAndWait",
+            "selector": "#login_btn",
+            "waitUntil": "networkidle2"
+          },
+          {
+            "action": "goto",
+            "url": "={{ 'https://dummy-portal.mediassist.in/claims/' + $json.claim_id }}",
+            "waitUntil": "networkidle2"
+          },
+          {
+            "action": "type",
+            "selector": "#reply_box",
+            "value": "={{ $json.ai_draft }}"
+          },
+          {
+            "action": "clickAndWait",
+            "selector": "#submit_btn",
+            "waitUntil": "networkidle2"
+          }
+        ],
+        "output": "lastResult"
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "upload-success",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "upload-result-check",
+      "name": "IF - Upload Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [2700, 300]
+    },
+    {
+      "parameters": {
+        "phoneNumberId": "={{ $env.WHATSAPP_PHONE_NUMBER_ID || 'REPLACE_WITH_SENDER_PHONE_NUMBER_ID' }}",
+        "recipientPhoneNumber": "={{ $env.DOCTOR_WHATSAPP_NUMBER || 'REPLACE_WITH_DOCTOR_WHATSAPP_NUMBER' }}",
+        "resource": "message",
+        "operation": "send",
+        "messageType": "text",
+        "textBody": "={{ ' *Reply Uploaded Successfully*\\n\\n*Claim ID:* ' + $json.claim_id + '\\n*Patient:* ' + $json.patient + '\\n*Time:* ' + $now.format('dd-MM-yyyy HH:mm') }}"
+      },
+      "id": "success-notification",
+      "name": "WhatsApp - Success Notification",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 2,
+      "position": [2940, 300],
+      "credentials": {
+        "whatsAppBusinessCloudApi": {
+          "id": "REPLACE_WITH_YOUR_WHATSAPP_CRED_ID",
+          "name": "WhatsApp Business Cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "={{ $env.SLACK_ALERT_CHANNEL || '#tpa-alerts' }}",
+        "text": "={{ ' *TPA Upload Failed*\\n\\n*Claim ID:* ' + $json.claim_id + '\\n*Patient:* ' + $json.patient + '\\n*Error:* ' + ($json.error?.message || $json.errorMessage || 'Unknown error') + '\\n*Time:* ' + $now.format('dd-MM-yyyy HH:mm') }}",
+        "otherOptions": {}
+      },
+      "id": "upload-failure-slack",
+      "name": "Slack - Upload Failure Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [2940, 460],
+      "credentials": {
+        "slackApi": {
+          "id": "REPLACE_WITH_YOUR_SLACK_CRED_ID",
+          "name": "Slack API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "**Step 5: Auto-Upload (Puppeteer)**\n- Re-login to portal (session refresh)\n- Navigate to claim URL\n- Paste ai_draft into reply box\n- Submit and verify\n\n**Step 6: Result Notification**\n- Success: WhatsApp confirmation\n- Failure: Slack alert + WhatsApp error",
+        "height": 200,
+        "width": 480
+      },
+      "id": "cc33dd44-ee55-4f66-8a77-889900aabb01",
+      "name": "Sticky Note - Upload",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [2440, 60]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "scrape-error",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ERROR",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "scrape-error-check",
+      "name": "IF - Scrape Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [780, 520]
+    },
+    {
+      "parameters": {
+        "channel": "={{ $env.SLACK_ALERT_CHANNEL || '#tpa-alerts' }}",
+        "text": "={{ ' *TPA Watchdog Scrape Failed*\\n\\n*Error:* ' + ($json.error_message || $json.errorMessage || 'Unknown error') + '\\n*Time:* ' + $now.format('dd-MM-yyyy HH:mm') + '\\n\\nPlease check the portal manually.' }}",
+        "otherOptions": {}
+      },
+      "id": "scrape-failure-slack",
+      "name": "Slack - Scrape Failure Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [1020, 580],
+      "credentials": {
+        "slackApi": {
+          "id": "REPLACE_WITH_YOUR_SLACK_CRED_ID",
+          "name": "Slack API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Puppeteer - Watchdog (Scrape)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Puppeteer - Watchdog (Scrape)": {
+      "main": [
+        [
+          {
+            "node": "IF - Scrape Error?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IF - Query Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Scrape Error?": {
+      "main": [
+        [
+          {
+            "node": "Slack - Scrape Failure Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "IF - Query Found?": {
+      "main": [
+        [
+          {
+            "node": "Google Gemini - Draft Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "End - No Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini - Draft Reply": {
+      "main": [
+        [
+          {
+            "node": "Set - Consolidate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Consolidate Data": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp - Send Buttons to Doctor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp - Send Buttons to Doctor": {
+      "main": [
+        [
+          {
+            "node": "Wait - Doctor Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait - Doctor Response": {
+      "main": [
+        [
+          {
+            "node": "Merge - Restore Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Consolidate Data": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp - Send Buttons to Doctor",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge - Restore Context",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge - Restore Context": {
+      "main": [
+        [
+          {
+            "node": "IF - Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Approved?": {
+      "main": [
+        [
+          {
+            "node": "Puppeteer - Auto Upload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "End - Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Puppeteer - Auto Upload": {
+      "main": [
+        [
+          {
+            "node": "IF - Upload Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Upload Success?": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp - Success Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack - Upload Failure Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionTimeout": 1800,
+    "timezone": "Asia/Kolkata",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "TPA",
+      "id": "tpa-tag"
+    },
+    {
+      "name": "Production",
+      "id": "prod-tag"
+    }
+  ],
+  "pinData": {},
+  "versionId": "prod-v1.0.0-2025-12-22",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": ""
+  }
+}
