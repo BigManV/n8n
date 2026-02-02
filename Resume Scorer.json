@@ -1,0 +1,727 @@
+{
+  "name": "Resume Scorer",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "13YMyhxr35Qp2aa0lKoXaygyISDmgIIqUqEFNcTL07DUKgoSap22V6Aw8m6o88DnKQglYYOAq",
+          "mode": "id"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "name": "Trigger",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        3776,
+        3536
+      ],
+      "id": "6e3d9fc3-6ee3-4aaf-8c80-02634849f38e",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "q8iyQgdjiJlIQVhJ",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.id }}"
+        },
+        "options": {}
+      },
+      "name": "Get Resume",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        4000,
+        3536
+      ],
+      "id": "3e760c04-32e5-4490-a014-24b2dd4b0514",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "q8iyQgdjiJlIQVhJ",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "name": "Read Resume",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        4224,
+        3536
+      ],
+      "id": "f719bdbb-81d5-4912-8a74-a90715a9c325"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "resumeText",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            },
+            {
+              "name": "fileId",
+              "value": "={{ $('Trigger').item.json.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Store Resume",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4448,
+        3536
+      ],
+      "id": "3a392572-ef5b-4328-b6d0-c79eecd87226"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "1hXhZzU7j0g5L7EYLSYVDCWNEqnRQZqCA",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "name": "Get JD",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        4672,
+        3536
+      ],
+      "id": "a9c2d24e-086c-477f-a383-f00d0b808bfe",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "q8iyQgdjiJlIQVhJ",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "name": "Read JD",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        4896,
+        3536
+      ],
+      "id": "6f05c44f-b561-40d1-a5a1-0770ea0342e2"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "resumeText",
+              "value": "={{ $('Store Resume').item.json.resumeText }}",
+              "type": "string"
+            },
+            {
+              "name": "jdText",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            },
+            {
+              "name": "fileId",
+              "value": "={{ $('Store Resume').item.json.fileId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Merge",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        5120,
+        3536
+      ],
+      "id": "14481300-aa06-4bcf-be8c-c798f1f7f8fe"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'qwen/qwen3-32b', temperature: 0, messages: [{ role: 'system', content: 'You are an ATS resume evaluator. Return ONLY valid JSON with these fields: name, email, phone, score (0-100), explanation. No markdown, no extra text.' }, { role: 'user', content: 'Extract candidate info and score relevance (0-100). JOB: ' + $json.jdText.substring(0, 4000).replace(/\\s+/g, ' ').trim() + ' RESUME: ' + $json.resumeText.substring(0, 8000).replace(/\\s+/g, ' ').trim() }] }) }}",
+        "options": {}
+      },
+      "name": "AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5344,
+        3536
+      ],
+      "id": "1c63add8-c94c-4e32-9d50-469955bc45db",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mzbW6ACQXPCi9hdd",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const r=$input.item.json.choices?.[0]?.message?.content||'';\nconst f=$('Merge').item.json.fileId||'';\nlet p=null;\ntry{p=JSON.parse(r);}catch(e){const m=r.match(/\\{[\\s\\S]*\\}/);if(m)try{p=JSON.parse(m[0]);}catch(e2){}}\nreturn{json:{name:p?.name||'',phone:p?.phone||'',email:p?.email||'',link:f?'https://drive.google.com/file/d/'+f+'/view':'',score:p?.score||0,reason:p?.explanation||''}};"
+      },
+      "name": "Parse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5568,
+        3536
+      ],
+      "id": "b8fdcb0e-ac53-475f-8b95-cdf5df495b96"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1BL6MLYE3uq3xeiTkHhNF6us0nJ_8UUuUIMyayiVjuj0"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1BL6MLYE3uq3xeiTkHhNF6us0nJ_8UUuUIMyayiVjuj0/edit#gid=0"
+        },
+        "options": {}
+      },
+      "name": "Check Duplicate",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        5792,
+        3536
+      ],
+      "id": "a2634ebc-d0c0-4304-aeae-b18edf49728a",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "thz2eOYUAO5oVHCw",
+          "name": "Google Sheets account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the candidate data from Parse node\nconst candidateName = $('Parse').item.json.name || '';\nconst candidatePhone = $('Parse').item.json.phone || '';\nconst candidateEmail = $('Parse').item.json.email || '';\n\n// Get all existing rows from the sheet\nconst allRows = $input.all();\n\n// Extract existing data and normalize for comparison (only phone and email)\nconst existingData = allRows.map(item => ({\n  phone: (item.json['Candidate mobile'] || '').replace(/[^0-9]/g, ''),\n  email: (item.json['Candidate email'] || '').toLowerCase().trim()\n})).filter(row => row.phone || row.email);\n\n// Normalize candidate data\nconst normalizedCandidate = {\n  phone: candidatePhone.replace(/[^0-9]/g, ''),\n  email: candidateEmail.toLowerCase().trim()\n};\n\nconsole.log('Candidate:', normalizedCandidate);\nconsole.log('Existing count:', existingData.length);\n\n// Check if phone OR email matches (names are ignored)\nconst isDuplicate = existingData.some(existing => {\n  const phoneMatch = normalizedCandidate.phone && existing.phone && \n                     normalizedCandidate.phone === existing.phone;\n  const emailMatch = normalizedCandidate.email && existing.email && \n                     normalizedCandidate.email === existing.email;\n  \n  return phoneMatch || emailMatch;\n});\n\nconsole.log('Is Duplicate:', isDuplicate);\n\n// Return the parsed candidate data with duplicate flag\nconst parseData = $('Parse').item.json;\n\nreturn {\n  json: {\n    ...parseData,\n    isDuplicate: isDuplicate\n  }\n};"
+      },
+      "name": "Check Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6016,
+        3536
+      ],
+      "id": "020c9ed2-bb52-488a-8b27-b3b27c7c75b8"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "not-duplicate-condition",
+              "leftValue": "={{ $json.isDuplicate }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Is New Candidate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        6240,
+        3536
+      ],
+      "id": "6381078e-b5b5-452b-8346-914171150477"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1BL6MLYE3uq3xeiTkHhNF6us0nJ_8UUuUIMyayiVjuj0"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Candidate name": "={{ $json.name }}",
+            "Candidate mobile": "={{ \"'\" + $json.phone }}",
+            "Candidate email": "={{ $json.email }}",
+            "Resume file reference": "={{ $json.link }}",
+            "Relevance score (0–100 or similar)": "={{ $json.score }}",
+            "Clear reasoning/explanation behind the score": "={{ $json.reason }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Candidate name",
+              "displayName": "Candidate name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Candidate mobile",
+              "displayName": "Candidate mobile",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Candidate email",
+              "displayName": "Candidate email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Resume file reference",
+              "displayName": "Resume file reference",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Relevance score (0–100 or similar)",
+              "displayName": "Relevance score (0–100 or similar)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Clear reasoning/explanation behind the score",
+              "displayName": "Clear reasoning/explanation behind the score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "name": "Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        6464,
+        3536
+      ],
+      "id": "256673b4-793f-470b-a709-eb7019f88ccc",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "thz2eOYUAO5oVHCw",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "high-score-condition",
+              "leftValue": "={{ $json['Relevance score (0–100 or similar)'] }}",
+              "rightValue": 90,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Score > 90?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        6896,
+        3536
+      ],
+      "id": "91b62b2a-8179-4335-8d63-aae0e317d1f3"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1BL6MLYE3uq3xeiTkHhNF6us0nJ_8UUuUIMyayiVjuj0:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  requests: [{\n    repeatCell: {\n      range: {\n        sheetId: 0,\n        startRowIndex: Number($json.row_number) - 1,\n        endRowIndex: Number($json.row_number),\n        startColumnIndex: 0,\n        endColumnIndex: 6\n      },\n      cell: {\n        userEnteredFormat: {\n          backgroundColor: {\n            red: 0.57,\n            green: 0.82,\n            blue: 0.31\n          }\n        }\n      },\n      fields: \"userEnteredFormat.backgroundColor\"\n    }\n  }]\n}) }}",
+        "options": {}
+      },
+      "name": "Highlight Green",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        7120,
+        3440
+      ],
+      "id": "b61671a6-bbd5-4db1-8a63-58f5c3c7521b",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "thz2eOYUAO5oVHCw",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Trigger').first().json.owners[0].emailAddress }}",
+        "subject": "={{ $('Read JD').first().json.info.Title }} - {{ $('Sheet').first().json['Candidate name'] }} ({{ $('Sheet').first().json['Relevance score (0–100 or similar)'] }})",
+        "message": "==<p>Candidate with a high relevance score for <strong>{{ $('Read JD').first().json.info.Title }}</strong> found.</p>\n\n<h3>Candidate Details:</h3>\n\n<p><strong>Candidate Name:</strong> {{ $json['Candidate name'] }}</p>\n\n<p><strong>Mobile Number:</strong> {{ $json['Candidate mobile'] }}</p>\n\n<p><strong>Email:</strong> {{ $json['Candidate email'] }}</p>\n\n<p><strong>Resume Link:</strong> <a href=\"{{ $json['Resume file reference'] }}\">View Resume</a></p>\n\n<p><strong>Relevance Score:</strong> {{ $json['Relevance score (0–100 or similar)'] }}</p>\n\n<p><strong>Reason:</strong> {{ $json['Clear reasoning/explanation behind the score'] }}</p>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        7120,
+        3632
+      ],
+      "id": "f9e834ef-52c0-4d41-ad7e-d38513a50ae1",
+      "name": "Send a message",
+      "webhookId": "db85c709-950e-4af9-ba2b-c14dce0b0fac",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gNvvlfkZpdZlJxcv",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1BL6MLYE3uq3xeiTkHhNF6us0nJ_8UUuUIMyayiVjuj0",
+          "mode": "list",
+          "cachedResultName": "Resume Evaluations",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1BL6MLYE3uq3xeiTkHhNF6us0nJ_8UUuUIMyayiVjuj0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1BL6MLYE3uq3xeiTkHhNF6us0nJ_8UUuUIMyayiVjuj0/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        6672,
+        3536
+      ],
+      "id": "073e5077-96b0-4bd7-bc7e-cc35bf164394",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "thz2eOYUAO5oVHCw",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "# Resume Scorer Automation Workflow\n\n## How This Automation Works\n\nThis workflow automates the resume screening and scoring process using AI to evaluate candidate qualifications efficiently.\n\n### Step-by-Step Process:\n\n1. Trigger: Email/Webhook Input\n   - Receives resume submissions via email or form submission\n   - Extracts candidate name, email, and attached resume\n\n2. PDF Parser\n   - Extracts text content from resume files\n   - Cleans formatting and structures text for analysis\n\n3. AI Resume Analysis (GPT-4)\n   - Analyzes experience, skills, education\n   - Extracts key qualifications\n   - Identifies tech stack, certifications, years of experience\n\n4. Scoring Engine\n   - Evaluates against job requirements\n   - Generates compatibility score (0-100)\n   - Rates: Experience Match, Skills Match, Education, Growth Potential\n\n5. Data Storage\n   - Saves scores to Google Sheets or database\n   - Creates searchable candidate records\n   - Tracks scores by department/role\n\n6. Notifications\n   - Sends high-scoring candidates to hiring team\n   - Auto-rejects low scorers with template email\n   - Alerts for edge cases requiring manual review\n\n7. Final Output\n   - Ranked candidate list with detailed analysis\n   - Export reports for hiring decisions\n   - Archive for future reference\n\n### Key Features:\n- Instant resume evaluation\n- Bias-reduced scoring\n- Customizable job requirements\n- Bulk processing capable\n- Audit trail for compliance",
+        "height": 992,
+        "width": 672
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2976,
+        2976
+      ],
+      "typeVersion": 1,
+      "id": "ef3c403e-12f4-400b-a0df-3908b1c04cb2",
+      "name": "Sticky Note"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Resume",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Resume": {
+      "main": [
+        [
+          {
+            "node": "Read Resume",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Resume": {
+      "main": [
+        [
+          {
+            "node": "Store Resume",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Resume": {
+      "main": [
+        [
+          {
+            "node": "Get JD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get JD": {
+      "main": [
+        [
+          {
+            "node": "Read JD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read JD": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI": {
+      "main": [
+        [
+          {
+            "node": "Parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Check Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Status": {
+      "main": [
+        [
+          {
+            "node": "Is New Candidate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is New Candidate?": {
+      "main": [
+        [
+          {
+            "node": "Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheet": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score > 90?": {
+      "main": [
+        [
+          {
+            "node": "Highlight Green",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Score > 90?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "87f0f90b-c9da-4a19-8379-c7cc1de75bc0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a572e4eb978bc2bd64391fc513d641341761c2670d222dbec456e1fecebcb64b"
+  },
+  "id": "TID4JEFeASz9U18K",
+  "tags": [
+    {
+      "updatedAt": "2025-12-22T17:53:14.470Z",
+      "createdAt": "2025-12-22T17:53:14.470Z",
+      "id": "xsUE1clUWac2oYsH",
+      "name": "TPA"
+    },
+    {
+      "updatedAt": "2025-12-22T17:53:14.483Z",
+      "createdAt": "2025-12-22T17:53:14.483Z",
+      "id": "jza7sFrtxrDtKnaZ",
+      "name": "Production"
+    }
+  ]
+}
